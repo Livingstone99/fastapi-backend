@@ -1,40 +1,36 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from typing import Optional
+from jose import JWTError, jwt
 
-from app.core.database import get_db
 from app.core.config import settings
-from app.core.security import decode_access_token
-from app.crud.user import get_user_by_email
+from app.core.database import get_db
+from app.crud.user import get_user_by_phone
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
 
 def get_current_user(
-    db: Session = Depends(get_db),
-    token: str = Depends(oauth2_scheme)
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
 ) -> User:
-    """Dependency to get the current user from the token"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
-    payload = decode_access_token(token)
-    if payload is None:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        phone: str = payload.get("sub")
+        if phone is None:
+            raise credentials_exception
+    except JWTError:
         raise credentials_exception
-    
-    email: str = payload.get("sub")
-    if email is None:
-        raise credentials_exception
-    
-    user = get_user_by_email(db, email=email)
+
+    user = get_user_by_phone(db, phone=phone)
     if user is None:
         raise credentials_exception
-    
     return user
 
 
